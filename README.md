@@ -1,4 +1,4 @@
-🛡️ NetPulse v1.0 — Real-Time Network Packet Sniffer & SOC Traffic Visualizer
+# 🛡️ NetPulse v1.0 — Real-Time Network Packet Sniffer & SOC Traffic Visualizer
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-Framework-black?style=for-the-badge&logo=flask&logoColor=white)
