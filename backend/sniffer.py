@@ -70,12 +70,6 @@ class PacketSniffer:
             self._record_packet_data(src_ip, dst_ip, proto, pkt_len, packet)
 
     def _simulate_traffic(self):
-        sample_ips = [
-            "192.168.31.5", "10.0.0.15", "172.16.0.4", 
-            "20.207.73.82", "142.250.192.46", "157.240.199.35"
-        ],
-        protocols = ["TCP", "UDP", "TCP", "ICMP", "UDP"]
-        
         while self.is_running:
             src_ip = random.choice([
                 "192.168.31.5", "10.0.0.15", "172.16.0.4", 
@@ -91,7 +85,7 @@ class PacketSniffer:
             pkt_len = random.randint(64, 1420)
             
             self._record_packet_data(src_ip, dst_ip, proto, pkt_len, None)
-            time.sleep(1.0)
+            time.sleep(0.3)  # High speed packet generation delay
 
     def _record_packet_data(self, src_ip, dst_ip, proto, pkt_len, raw_packet):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -126,9 +120,16 @@ class PacketSniffer:
             if len(self.packets_cache) > 100:
                 self.packets_cache.pop()
 
+        if self.socket_io:
+            try:
+                stats_payload = self.get_stats()
+                self.socket_io.emit('new_packet', packet_info)
+                self.socket_io.emit('live_packet_data', stats_payload)
+            except Exception:
+                pass
+
     def get_stats(self):
         with self.lock:
-            # Sort top IPs by packet counts descending
             sorted_ips = dict(sorted(self.top_ips.items(), key=lambda item: item[1], reverse=True)[:5])
             
             return {
