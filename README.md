@@ -77,4 +77,3 @@ Open your browser and navigate to `http://127.0.0.1:5000`.
 
 *Cybersecurity Student & Researcher*
 
-[GitHub Profile](https://www.google.com/search?q=https://github.com/saudnadaf09)
