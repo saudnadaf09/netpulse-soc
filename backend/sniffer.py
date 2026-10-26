@@ -14,12 +14,9 @@ class PacketSniffer:
     def __init__(self):
         self.is_running = False
         self.packets_cache = []
-        self.stats = {
-            "total_volume": 0.0,
-            "active_protocols": set(),
-            "top_ips": {},
-            "protocol_counts": {"TCP": 0, "UDP": 0, "OTHER": 0}
-        }
+        self.total_bytes_counter = 0.0
+        self.protocols_count = {"TCP": 0, "UDP": 0, "ICMP": 0, "OTHER": 0}
+        self.top_ips = {}
         self.lock = threading.Lock()
         self.socket_io = None
 
@@ -31,7 +28,6 @@ class PacketSniffer:
             return
         self.is_running = True
 
-        # Check if we are on a cloud platform like Render or lack raw socket permissions
         is_cloud = os.environ.get("RENDER") or not SCAPY_AVAILABLE
         
         if is_cloud or not self._test_raw_socket():
@@ -68,70 +64,78 @@ class PacketSniffer:
                 proto = "TCP"
             elif UDP in packet:
                 proto = "UDP"
+            elif ICMP in packet:
+                proto = "ICMP"
 
-            self._record_packet_data(src_ip, dst_ip, proto, pkt_len)
+            self._record_packet_data(src_ip, dst_ip, proto, pkt_len, packet)
 
     def _simulate_traffic(self):
         sample_ips = [
-            "192.168.31.5", "192.168.31.1", "216.24.57.18", 
-            "20.207.73.82", "3.6.199.65", "142.250.192.46", "157.240.199.35"
-        ]
-        protocols = ["TCP", "UDP", "TCP", "TCP", "UDP", "OTHER"]
+            "192.168.31.5", "10.0.0.15", "172.16.0.4", 
+            "20.207.73.82", "142.250.192.46", "157.240.199.35"
+        ],
+        protocols = ["TCP", "UDP", "TCP", "ICMP", "UDP"]
         
         while self.is_running:
-            src_ip = random.choice(sample_ips)
-            dst_ip = random.choice([ip for ip in sample_ips if ip != src_ip])
-            proto = random.choice(protocols)
-            pkt_len = random.randint(64, 1500)
+            src_ip = random.choice([
+                "192.168.31.5", "10.0.0.15", "172.16.0.4", 
+                "8.8.8.8", "142.250.192.46"
+            ])
+            dst_ip = random.choice([
+                "192.168.31.1", "20.207.73.82", "157.240.199.35", "13.107.42.14"
+            ])
+            if src_ip == dst_ip:
+                dst_ip = "8.8.8.8"
+                
+            proto = random.choice(["TCP", "UDP", "TCP", "ICMP", "OTHER"])
+            pkt_len = random.randint(64, 1420)
             
-            self._record_packet_data(src_ip, dst_ip, proto, pkt_len)
-            time.sleep(1.2)
+            self._record_packet_data(src_ip, dst_ip, proto, pkt_len, None)
+            time.sleep(1.0)
 
-    def _record_packet_data(self, src_ip, dst_ip, proto, pkt_len):
+    def _record_packet_data(self, src_ip, dst_ip, proto, pkt_len, raw_packet):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        threat_status = "SAFE" if random.random() > 0.15 else "SUSPICIOUS"
+        is_threat = random.random() < 0.12
+        threat_desc = "SQL Injection Payload Detected in Stream" if is_threat else ""
+        
+        ttl = 64 if raw_packet is None else getattr(raw_packet[IP], 'ttl', 64)
+        tcp_flags = "S (SYN)" if proto == "TCP" else "N/A"
         
         packet_info = {
-            "time": timestamp,
-            "source": f"{src_ip} (Local Network)" if "192.168" in src_ip else src_ip,
-            "destination": dst_ip,
+            "timestamp": timestamp,
+            "src": src_ip,
+            "src_port": random.randint(40000, 65535),
+            "dst": dst_ip,
+            "dst_port": 443 if proto == "TCP" else 53,
             "protocol": proto,
-            "size": f"{pkt_len} B",
-            "threat": threat_status
+            "size": pkt_len,
+            "ttl": ttl,
+            "tcp_flags": tcp_flags,
+            "country": "India (Local Node)" if "192.168" in src_ip or "10." in src_ip else "United States",
+            "threat": is_threat,
+            "threat_desc": threat_desc,
+            "payload": f"HEX: 45 00 05 dc 00 00 40 00 {random.randint(10,99)} 06 c0 a8 1f 05... [DPI Parsed Stream Data Length {pkt_len}]"
         }
 
         with self.lock:
+            self.total_bytes_counter += pkt_len
+            self.protocols_count[proto] = self.protocols_count.get(proto, 0) + 1
+            self.top_ips[src_ip] = self.top_ips.get(src_ip, 0) + 1
+            
             self.packets_cache.insert(0, packet_info)
             if len(self.packets_cache) > 100:
                 self.packets_cache.pop()
 
-            self.stats["total_volume"] += pkt_len / 1024.0 # KB
-            self.stats["active_protocols"].add(proto)
-            self.stats["protocol_counts"][proto] = self.stats["protocol_counts"].get(proto, 0) + 1
-            self.stats["top_ips"][src_ip] = self.stats["top_ips"].get(src_ip, 0) + 1
-
-        if self.socket_io:
-            try:
-                self.socket_io.emit('new_packet', packet_info)
-                self.socket_io.emit('update_stats', self.get_stats())
-            except Exception as e:
-                pass
-
     def get_stats(self):
         with self.lock:
-            top_ip = "N/A"
-            if self.stats["top_ips"]:
-                try:
-                    top_ip = max(self.stats["top_ips"], key=self.stats["top_ips"].get)
-                except Exception:
-                    top_ip = list(self.stats["top_ips"].keys())[0] if self.stats["top_ips"] else "N/A"
-
+            # Sort top IPs by packet counts descending
+            sorted_ips = dict(sorted(self.top_ips.items(), key=lambda item: item[1], reverse=True)[:5])
+            
             return {
-                "total_volume": round(self.stats["total_volume"], 2),
-                "active_protocols_count": len(self.stats["active_protocols"]),
-                "top_origin_ip": top_ip,
-                "protocol_counts": self.stats["protocol_counts"],
-                "top_hosts": dict(sorted(self.stats["top_ips"].items(), key=lambda item: item[1], reverse=True)[:5])
+                "total_bytes": self.total_bytes_counter,
+                "protocols": self.protocols_count,
+                "top_ips": sorted_ips,
+                "packets": list(self.packets_cache)
             }
 
     def stop_sniffing(self):

@@ -31,7 +31,7 @@
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div class="bg-gray-900 border border-gray-800 p-5 rounded-xl shadow-lg">
             <h3 class="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">Total Volume Captured</h3>
-            <p id="total-bytes" class="text-2xl font-mono font-bold text-cyan-400">0 KB</p>
+            <p id="total-bytes" class="text-2xl font-mono font-bold text-cyan-400">0.00 KB</p>
         </div>
         <div class="bg-gray-900 border border-gray-800 p-5 rounded-xl shadow-lg">
             <h3 class="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">Active Protocol Count</h3>
@@ -166,7 +166,7 @@
 
             const tbody = document.getElementById('packet-table-body');
             if (filteredPackets.length > 0) {
-                tbody.innerHTML = filteredPackets.reverse().map((pkt, idx) => `
+                tbody.innerHTML = filteredPackets.map((pkt, idx) => `
                     <tr onclick="openDpiModal(${packets.indexOf(pkt)})" class="hover:bg-cyan-950/30 cursor-pointer transition">
                         <td class="p-3 text-gray-400">${pkt.timestamp}</td>
                         <td class="p-3">
@@ -177,7 +177,7 @@
                         <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">${pkt.protocol}</span></td>
                         <td class="p-3 text-gray-300">${pkt.size} B</td>
                         <td class="p-3">
-                            ${pkt.threat ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/30 animate-pulse">FLAGGED / THREAT</span>' : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">SAFE</span>'}
+                            ${pkt.threat ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/30 animate-pulse">FLAGGED / THREAT</span>' : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-red-500/30">SAFE</span>'}
                         </td>
                     </tr>
                 `).join('');
@@ -187,20 +187,24 @@
         }
 
         socket.on('live_packet_data', function(data) {
-            document.getElementById('total-bytes').innerText = (data.total_bytes / 1024).toFixed(2) + " KB";
-            document.getElementById('active-protocols').innerText = Object.keys(data.protocols).length;
-            const topIPs = Object.keys(data.top_ips);
+            const totalBytes = data.total_bytes || 0;
+            document.getElementById('total-bytes').innerText = (totalBytes / 1024).toFixed(2) + " KB";
+            
+            const protos = data.protocols || {};
+            document.getElementById('active-protocols').innerText = Object.keys(protos).filter(k => protos[k] > 0).length;
+            
+            const topIPs = Object.keys(data.top_ips || {});
             document.getElementById('top-ip').innerText = topIPs.length > 0 ? topIPs[0] : "N/A";
 
-            protocolChart.data.labels = Object.keys(data.protocols);
-            protocolChart.data.datasets[0].data = Object.values(data.protocols);
+            protocolChart.data.labels = Object.keys(protos);
+            protocolChart.data.datasets[0].data = Object.values(protos);
             protocolChart.update();
 
-            ipChart.data.labels = Object.keys(data.top_ips);
-            ipChart.data.datasets[0].data = Object.values(data.top_ips);
+            ipChart.data.labels = topIPs;
+            ipChart.data.datasets[0].data = topIPs.map(ip => data.top_ips[ip]);
             ipChart.update();
 
-            latestPackets = data.packets;
+            latestPackets = data.packets || [];
             renderTable(latestPackets);
         });
 

@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_socketio import SocketIO
 import threading
-from backend.sniffer import sniffer_instance
+from sniffer import sniffer_instance
 import time
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
@@ -63,12 +63,11 @@ def background_packet_broadcaster():
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         for pkt in stats.get('packets', []):
-            if pkt.get('threat'):
-                # Check if threat already logged recently to prevent duplicates
-                cursor.execute("SELECT id FROM threat_logs WHERE timestamp = ? AND src_ip = ?", (pkt['timestamp'], pkt['src']))
+            if pkt.get('threat') == 'SUSPICIOUS':
+                cursor.execute("SELECT id FROM threat_logs WHERE timestamp = ? AND src_ip = ?", (pkt.get('time'), pkt.get('source')))
                 if not cursor.fetchone():
                     cursor.execute("INSERT INTO threat_logs (timestamp, src_ip, dst_ip, protocol, threat_desc) VALUES (?, ?, ?, ?, ?)",
-                                   (pkt['timestamp'], pkt['src'], pkt['dst'], pkt['protocol'], pkt['threat_desc']))
+                                   (pkt.get('time'), pkt.get('source'), pkt.get('destination'), pkt.get('protocol'), "Suspicious traffic anomaly detected"))
         conn.commit()
         conn.close()
         
